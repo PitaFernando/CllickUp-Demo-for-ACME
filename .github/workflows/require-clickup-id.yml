@@ -8,12 +8,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check for CU ID in PR
-        id: cu          # <-- add an id so we can read outputs
+        id: cu
         uses: actions-ecosystem/action-regex-match@v2
         with:
           text: ${{ github.event.pull_request.title }} ${{ github.event.pull_request.body }}
-          # case-insensitive; allows optional colon after the ID
-          regex: (?i)CU-[A-Za-z0-9]+:?
+          regex: '(?i)CU-[A-Za-z0-9]+:?'
 
       - name: Fail if no match
         if: ${{ steps.cu.outputs.match == '' }}

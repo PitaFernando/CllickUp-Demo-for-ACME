@@ -10,7 +10,7 @@ jobs:
         uses: actions-ecosystem/action-regex-match@v2
         with:
           text: ${{ github.event.pull_request.title }} ${{ github.event.pull_request.body }}
-          regex: 'CU-[A-Za-z0-9]+'
+          regex: 'CU-[A-Za-z0-9]+:?'
       - name: Fail if no match
         if: steps.action-regex-match.outputs.match == ''
         run: |

@@ -2,17 +2,25 @@ name: Require ClickUp ID in PR
 on:
   pull_request:
     types: [opened, edited, synchronize]
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Check for CU-<taskId> in PR
+      - name: Check for CU ID in PR
+        id: cu          # <-- add an id so we can read outputs
         uses: actions-ecosystem/action-regex-match@v2
         with:
           text: ${{ github.event.pull_request.title }} ${{ github.event.pull_request.body }}
-          regex: 'CU-[A-Za-z0-9]+:?'
+          # case-insensitive; allows optional colon after the ID
+          regex: (?i)CU-[A-Za-z0-9]+:?
+
       - name: Fail if no match
-        if: steps.action-regex-match.outputs.match == ''
+        if: ${{ steps.cu.outputs.match == '' }}
         run: |
           echo '❌ PR must reference a ClickUp Task ID (e.g., CU-86ab8ydtm)'
           exit 1
+
+      - name: Success (found ID)
+        if: ${{ steps.cu.outputs.match != '' }}
+        run: echo "✅ Found ClickUp ID: ${{ steps.cu.outputs.match }}"

@@ -7,19 +7,20 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Check for CU ID in PR
-        id: cu                         # <-- add an id
-        uses: actions-ecosystem/action-regex-match@v2
-        with:
-          text: ${{ github.event.pull_request.title }} ${{ github.event.pull_request.body }}
-          regex: 'CU-[A-Za-z0-9]+'
-
-      - name: Fail if no match
-        if: ${{ steps.cu.outputs.match == '' }}   # <-- reference that id
+      - name: Verify CU ID is present
+        shell: bash
         run: |
-          echo '❌ PR must reference a ClickUp Task ID (e.g., CU-86ab8ydtm)'
-          exit 1
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
+          TEXT="$PR_TITLE $PR_BODY"
 
-      - name: Success (found ID)
-        if: ${{ steps.cu.outputs.match != '' }}
-        run: echo "✅ Found ClickUp ID: ${{ steps.cu.outputs.match }}"
+          echo "PR title: $PR_TITLE"
+          echo "PR body : ${PR_BODY:0:120}"
+
+          # Match CU-<alphanumeric>, allow optional trailing colon
+          if echo "$TEXT" | grep -Eiq 'CU-[A-Za-z0-9]+:?'; then
+            echo "Found ClickUp ID ✅"
+          else
+            echo "PR must reference a ClickUp Task ID (e.g., CU-86ab8ydtm)" >&2
+            exit 1
+          fi

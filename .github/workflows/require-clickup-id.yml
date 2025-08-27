@@ -12,10 +12,14 @@ jobs:
         uses: actions-ecosystem/action-regex-match@v2
         with:
           text: ${{ github.event.pull_request.title }} ${{ github.event.pull_request.body }}
-          regex: '(?i)CU-[A-Za-z0-9]+:?'
+          regex: 'CU-[A-Za-z0-9]+:?'
 
       - name: Fail if no match
         if: ${{ steps.cu.outputs.match == '' }}
         run: |
-          echo 'PR must reference a ClickUp Task ID (e.g., CU-86ab8ydtm)'
+          echo "❌ PR must reference a ClickUp Task ID (e.g., CU-86ab8ydtm)"
           exit 1
+
+      - name: Success (found ID)
+        if: ${{ steps.cu.outputs.match != '' }}
+        run: echo "✅ Found ClickUp ID: ${{ steps.cu.outputs.match }}"

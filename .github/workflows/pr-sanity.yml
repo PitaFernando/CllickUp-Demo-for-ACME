@@ -1,0 +1,9 @@
+name: PR Sanity
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+jobs:
+  say-hello:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "✅ PR event triggered"

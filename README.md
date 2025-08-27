@@ -1,5 +1,4 @@
-
-# ClickUp + GitHub Demo
+# ClickUp Demo for ACME
 
 This is a small sandbox I set up for my ClickUp SE interview. The goal is to show how GitHub activity (branches, commits, PRs) links back to ClickUp tasks using the `CU-<taskId>` reference.
 

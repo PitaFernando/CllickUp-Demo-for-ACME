@@ -12,59 +12,55 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Gather PR fields & commits
+      - name: Collect PR data (title/body/branch)
         id: collect
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const pr = context.payload.pull_request;
-            const { owner, repo } = context.repo;
+        run: |
+          echo "title<<EOF" >> $GITHUB_OUTPUT
+          echo "${{ github.event.pull_request.title }}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-            // Fetch all commit messages in this PR
-            const commits = await github.paginate(
-              github.rest.pulls.listCommits,
-              { owner, repo, pull_number: pr.number }
-            );
-            const commitMsgs = commits.map(c => c.commit.message).join("\n");
+          # strip HTML comments from body so placeholders don't count
+          BODY_STRIPPED="$(printf "%s" "${{ github.event.pull_request.body }}" | sed -E 's/<!--([^-]|-+[^>])*-->//g')"
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$BODY_STRIPPED" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-            // Strip HTML comments from the PR body so placeholders don't count
-            const stripHtmlComments = (s) =>
-              (s || "").replace(/<!--[\s\S]*?-->/g, "");
+          echo "head_ref=${{ github.event.pull_request.head.ref }}" >> $GITHUB_OUTPUT
 
-            core.setOutput("title", pr.title || "");
-            core.setOutput("body", stripHtmlComments(pr.body || ""));
-            core.setOutput("head", (pr.head && pr.head.ref) || "");
-            core.setOutput("msgs", commitMsgs);
+      - name: Fetch commit messages
+        id: commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get commit messages via GitHub API
+          URL="https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits"
+          MSGS=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$URL" | jq -r '.[].commit.message' | tr '\n' ' ')
+          echo "messages<<EOF" >> $GITHUB_OUTPUT
+          echo "$MSGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Validate ClickUp ID across title/body/branch/commits
-        shell: bash
         env:
           TITLE: ${{ steps.collect.outputs.title }}
-          BODY: ${{ steps.collect.outputs.body }}
-          HEAD: ${{ steps.collect.outputs.head }}
-          MSGS: ${{ steps.collect.outputs.msgs }}
+          BODY:  ${{ steps.collect.outputs.body }}
+          HEAD:  ${{ steps.collect.outputs.head_ref }}
+          MSGS:  ${{ steps.commits.outputs.messages }}
+          # Accept CU-<alnum> or #<alnum-or-dash>. Use -i for case-insensitive.
+          REGEX: '(CU-[A-Za-z0-9]+|#[A-Za-z0-9-]+)'
         run: |
+          set -e
           echo "PR title: $TITLE"
-          echo "PR body (first 200 chars): ${BODY:0:200}"
-          echo "Branch: $HEAD"
-
-          # Valid patterns:
-          #  - CU-<alphanumeric>  (but not the placeholder CU-xxxx)
-          #  - #<alphanumeric-or-dash> (ClickUp format also allowed)
-          # Examples: CU-86ab8ydtm, #1abc2de, eng-123 (if you use custom ids)
-          REGEX='((?i)CU-(?!xxxx)[A-Za-z0-9]+|#[A-Za-z0-9-]+)'
+          echo "PR body : ${BODY:0:200}"
+          echo "Branch  : $HEAD"
+          echo "Sample commits: ${MSGS:0:200}"
 
           TEXT="$TITLE
           $BODY
           $HEAD
           $MSGS"
 
-          # Show some of what we scan for easier debugging
-          echo "Scanned text (first 400 chars):"
-          echo "${TEXT:0:400}"
-
-          if echo "$TEXT" | grep -Eiq "$REGEX"; then
-            echo "✅ Found a valid ClickUp ID in title/body/branch/commits."
+          if printf "%s" "$TEXT" | grep -Eiq "$REGEX"; then
+            echo "✅ Found a valid ClickUp ID."
           else
             echo "::error::❌ PR must reference a ClickUp Task ID in the title, body, branch name, or commit message (e.g., CU-86ab8ydtm or #1abc2de)."
             exit 1

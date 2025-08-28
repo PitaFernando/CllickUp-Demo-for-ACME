@@ -1,26 +1,71 @@
 name: Require ClickUp ID in PR
+
 on:
   pull_request:
-    types: [opened, edited, synchronize]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify CU ID is present
+      - name: Gather PR fields & commits
+        id: collect
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+
+            // Fetch all commit messages in this PR
+            const commits = await github.paginate(
+              github.rest.pulls.listCommits,
+              { owner, repo, pull_number: pr.number }
+            );
+            const commitMsgs = commits.map(c => c.commit.message).join("\n");
+
+            // Strip HTML comments from the PR body so placeholders don't count
+            const stripHtmlComments = (s) =>
+              (s || "").replace(/<!--[\s\S]*?-->/g, "");
+
+            core.setOutput("title", pr.title || "");
+            core.setOutput("body", stripHtmlComments(pr.body || ""));
+            core.setOutput("head", (pr.head && pr.head.ref) || "");
+            core.setOutput("msgs", commitMsgs);
+
+      - name: Validate ClickUp ID across title/body/branch/commits
         shell: bash
+        env:
+          TITLE: ${{ steps.collect.outputs.title }}
+          BODY: ${{ steps.collect.outputs.body }}
+          HEAD: ${{ steps.collect.outputs.head }}
+          MSGS: ${{ steps.collect.outputs.msgs }}
         run: |
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_BODY="${{ github.event.pull_request.body }}"
-          TEXT="$PR_TITLE $PR_BODY"
+          echo "PR title: $TITLE"
+          echo "PR body (first 200 chars): ${BODY:0:200}"
+          echo "Branch: $HEAD"
 
-          echo "PR title: $PR_TITLE"
-          echo "PR body : ${PR_BODY:0:120}"
+          # Valid patterns:
+          #  - CU-<alphanumeric>  (but not the placeholder CU-xxxx)
+          #  - #<alphanumeric-or-dash> (ClickUp format also allowed)
+          # Examples: CU-86ab8ydtm, #1abc2de, eng-123 (if you use custom ids)
+          REGEX='((?i)CU-(?!xxxx)[A-Za-z0-9]+|#[A-Za-z0-9-]+)'
 
-          # Match CU-<alphanumeric>, allow optional trailing colon
-          if echo "$TEXT" | grep -Eiq 'CU-[A-Za-z0-9]+:?'; then
-            echo "Found ClickUp ID ✅"
+          TEXT="$TITLE
+          $BODY
+          $HEAD
+          $MSGS"
+
+          # Show some of what we scan for easier debugging
+          echo "Scanned text (first 400 chars):"
+          echo "${TEXT:0:400}"
+
+          if echo "$TEXT" | grep -Eiq "$REGEX"; then
+            echo "✅ Found a valid ClickUp ID in title/body/branch/commits."
           else
-            echo "PR must reference a ClickUp Task ID (e.g., CU-86ab8ydtm)" >&2
+            echo "::error::❌ PR must reference a ClickUp Task ID in the title, body, branch name, or commit message (e.g., CU-86ab8ydtm or #1abc2de)."
             exit 1
           fi
